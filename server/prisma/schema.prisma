@@ -1,0 +1,126 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TokenType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
+// An account. The password is never stored, only its Argon2id hash.
+model User {
+  id              String    @id @default(uuid()) @db.Uuid
+  username        String    @db.VarChar(20) // as typed, shown in the UI
+  usernameLower   String    @unique @db.VarChar(20) // lowercase copy, enforces unique names
+  email           String    @unique @db.VarChar(254) // the server saves it lowercased
+  passwordHash    String
+  emailVerifiedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  sessions Session[]
+  tokens   UserToken[]
+  stats    PlayerStats?
+  worlds   World[]
+}
+
+// One row per logged-in device. Only a hash of the cookie token is stored.
+model Session {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt]) // for deleting expired sessions
+}
+
+// Single-use tokens for email verification and password reset (hashed).
+model UserToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  type      TokenType
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime? // set when the token is used, so it cannot be reused
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
+  @@index([expiresAt])
+}
+
+// Lifetime totals shown on the dashboard (one row per user).
+model PlayerStats {
+  userId            String   @id @db.Uuid
+  blocksPlaced      Int      @default(0)
+  blocksMined       Int      @default(0)
+  distanceTravelled Float    @default(0)
+  playTimeSeconds   Int      @default(0)
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// A saved world plus the player's last position and this world's counters.
+model World {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @db.Uuid
+  name            String   @db.VarChar(40)
+  seed            Int      @default(0) // reserved for seeded terrain later
+  dataVersion     Int      @default(1) // version of the save format (see WORLD_DATA_VERSION)
+  playerX         Float? // null = use the default spawn
+  playerY         Float?
+  playerZ         Float?
+  playerYaw       Float    @default(0)
+  playerPitch     Float    @default(0)
+  blocksMined     Int      @default(0)
+  blocksPlaced    Int      @default(0)
+  playTimeSeconds Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  lastPlayedAt    DateTime @default(now())
+
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chunks    WorldChunk[]
+  inventory InventorySlot[]
+
+  @@index([userId, lastPlayedAt]) // dashboard world list, newest first
+}
+
+// Only the blocks the player CHANGED in one 16x16 chunk: [[x, y, z, blockId], ...]
+model WorldChunk {
+  id        String   @id @default(uuid()) @db.Uuid
+  worldId   String   @db.Uuid
+  chunkX    Int
+  chunkZ    Int
+  edits     Json
+  updatedAt DateTime @updatedAt
+
+  world World @relation(fields: [worldId], references: [id], onDelete: Cascade)
+
+  // One row per chunk per world (also serves as the index for "all chunks of a world")
+  @@unique([worldId, chunkX, chunkZ])
+}
+
+// Inventory contents of a world: 9 hotbar slots (0-8) + 27 main slots (9-35).
+model InventorySlot {
+  id      String @id @default(uuid()) @db.Uuid
+  worldId String @db.Uuid
+  slot    Int
+  blockId Int
+  count   Int
+
+  world World @relation(fields: [worldId], references: [id], onDelete: Cascade)
+
+  @@unique([worldId, slot])
+}
