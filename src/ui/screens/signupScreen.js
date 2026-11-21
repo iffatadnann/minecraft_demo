@@ -1,14 +1,27 @@
 import { el } from '../dom.js';
 import { navBar } from '../components/navBar.js';
 import { authForm } from '../components/authForm.js';
-import { signup } from '../../api/authApi.js';
+import { signup, guestLogin } from '../../api/authApi.js';
 import { setUser } from '../../app/session.js';
 import { navigate } from '../../app/router.js';
 
 export function signupScreen(root) {
-  const footer = el('p', { class: 'muted' }, [
-    'Already have an account? ',
-    el('a', { href: '#/login', text: 'Log in' }),
+  const footer = el('div', { class: 'auth-footer' }, [
+    el('p', { class: 'muted' }, [
+      'Already have an account? ',
+      el('a', { href: '#/login', text: 'Log in' }),
+    ]),
+    el('div', { style: 'margin-top: 1.25rem; text-align: center;' }, [
+      el('button', {
+        class: 'btn',
+        type: 'button',
+        text: '⚡ Instant Play as Guest',
+        onclick: async () => {
+          setUser(await guestLogin());
+          navigate('/dashboard');
+        },
+      }),
+    ]),
   ]);
 
   root.append(
